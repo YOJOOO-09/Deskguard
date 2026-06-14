@@ -8,6 +8,7 @@ import DeskDetailsModal from '../components/DeskDetailsModal';
 import QueueBanner from '../components/QueueBanner';
 import DeskReadyModal from '../components/DeskReadyModal';
 import GroupBookingPanel from '../components/GroupBookingPanel';
+import QRScannerModal from '../components/QRScannerModal';
 import { CURRENT_USER, FLOORS, SECTIONS } from '../data/mockData';
 import { useDeskSocket } from '../hooks/useDeskSocket';
 import {
@@ -19,6 +20,18 @@ import {
   leaveQueue,
   reserveCluster,
 } from '../lib/api';
+
+function parseDeskId(raw) {
+  const trimmed = raw.trim();
+  try {
+    const obj = JSON.parse(trimmed);
+    if (obj?.deskId) return String(obj.deskId).toUpperCase();
+  } catch {
+    // not JSON, fall through
+  }
+  const match = trimmed.match(/([A-Za-z]+\d+)\s*$/);
+  return (match ? match[1] : trimmed).toUpperCase();
+}
 
 function getDeskStats(desks) {
   return {
@@ -39,6 +52,11 @@ export default function StudentDashboard({ onNavigate, onActiveDesk }) {
   const [claiming, setClaiming] = useState(false);
   const [queueLoading, setQueueLoading] = useState(false);
 
+  // QR scanning
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scanTargetId, setScanTargetId] = useState(null);
+  const [scanMessage, setScanMessage] = useState(null);
+
   // Group booking state
   const [cluster, setCluster] = useState(null);
   const [clusterReserved, setClusterReserved] = useState(null);
@@ -53,6 +71,12 @@ export default function StudentDashboard({ onNavigate, onActiveDesk }) {
   useEffect(() => {
     fetchDesks().then((data) => setDesks(data.desks)).catch(() => {});
   }, [setDesks]);
+
+  useEffect(() => {
+    if (!scanMessage) return undefined;
+    const t = setTimeout(() => setScanMessage(null), 4000);
+    return () => clearTimeout(t);
+  }, [scanMessage]);
 
   const stats = useMemo(() => getDeskStats(desks), [desks]);
   const myPosition = useMemo(() => {
@@ -107,6 +131,33 @@ export default function StudentDashboard({ onNavigate, onActiveDesk }) {
       console.error(err);
     } finally {
       setClaiming(false);
+    }
+  }
+
+  async function handleScanResult(raw) {
+    const deskId = parseDeskId(raw);
+    const target = scanTargetId;
+    setScannerOpen(false);
+    setScanTargetId(null);
+
+    const desk = desks.find((d) => d.id === deskId);
+    if (!desk) {
+      setScanMessage(`No desk found for code "${deskId}".`);
+      return;
+    }
+
+    if (target && target !== deskId) {
+      setScanMessage(`Scanned ${deskId}, but you were viewing ${target}.`);
+      setSelectedDesk(desk);
+      return;
+    }
+
+    if (desk.status === 'available') {
+      await handleCheckIn(desk);
+    } else if (desk.status === 'reserved' && desk.reservedFor?.studentId === CURRENT_USER.studentId) {
+      await handleClaim(desk);
+    } else {
+      setSelectedDesk(desk);
     }
   }
 
@@ -302,17 +353,39 @@ export default function StudentDashboard({ onNavigate, onActiveDesk }) {
         </div>
       </main>
 
-      <BottomNav active="dashboard" onNavigate={onNavigate} onScan={() => setSelectedDesk(desks.find((d) => d.status === 'available'))} />
+      <BottomNav
+        active="dashboard"
+        onNavigate={onNavigate}
+        onScan={() => {
+          setScanTargetId(null);
+          setScannerOpen(true);
+        }}
+      />
 
       {selectedDesk && (
         <DeskDetailsModal
           desk={desks.find((d) => d.id === selectedDesk.id) ?? selectedDesk}
           onClose={() => setSelectedDesk(null)}
-          onScan={() => {}}
+          onScan={() => {
+            setScanTargetId(selectedDesk.id);
+            setScannerOpen(true);
+          }}
           onCheckIn={() => handleCheckIn(selectedDesk)}
           onClaim={() => handleClaim(selectedDesk)}
           currentStudentId={CURRENT_USER.studentId}
         />
+      )}
+
+      {scannerOpen && (
+        <QRScannerModal onClose={() => { setScannerOpen(false); setScanTargetId(null); }} onResult={handleScanResult} />
+      )}
+
+      {scanMessage && (
+        <div className="fixed inset-x-0 bottom-24 z-50 flex justify-center px-4 md:bottom-6">
+          <div className="rounded-none border border-hairline bg-surface-card px-4 py-3 text-sm text-body shadow-2xl">
+            {scanMessage}
+          </div>
+        </div>
       )}
 
       {deskReady && (

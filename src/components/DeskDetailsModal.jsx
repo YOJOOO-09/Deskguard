@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { Clock, Monitor, Plug, QrCode, User } from 'lucide-react';
+import QRCode from 'qrcode';
 import Modal from './Modal';
 import StatusBadge from './StatusBadge';
 
@@ -8,6 +10,16 @@ function formatTime(iso) {
 }
 
 export default function DeskDetailsModal({ desk, onClose, onCheckIn, onScan, onClaim, currentStudentId }) {
+  const [qrDataUrl, setQrDataUrl] = useState(null);
+  const [showQr, setShowQr] = useState(false);
+
+  useEffect(() => {
+    if (!desk) return;
+    QRCode.toDataURL(desk.id, { margin: 1, width: 200, color: { dark: '#ffffff', light: '#00000000' } })
+      .then(setQrDataUrl)
+      .catch(() => setQrDataUrl(null));
+  }, [desk?.id]);
+
   if (!desk) return null;
   const isAvailable = desk.status === 'available';
   const isReservedForMe = desk.status === 'reserved' && desk.reservedFor?.studentId === currentStudentId;
@@ -39,6 +51,29 @@ export default function DeskDetailsModal({ desk, onClose, onCheckIn, onScan, onC
         >
           {desk.id}
         </div>
+      </div>
+
+      {/* Desk QR code (for testing the scanner) */}
+      <div className="mt-2 text-center">
+        <button
+          type="button"
+          onClick={() => setShowQr((v) => !v)}
+          className="text-xs font-medium text-muted hover:text-primary hover:underline"
+        >
+          {showQr ? 'Hide desk QR code' : 'Show desk QR code'}
+        </button>
+        {showQr && (
+          <div className="mt-3 flex flex-col items-center gap-2 rounded-none border border-hairline bg-surface-soft p-4">
+            {qrDataUrl ? (
+              <img src={qrDataUrl} alt={`QR code for desk ${desk.id}`} className="h-40 w-40" />
+            ) : (
+              <div className="flex h-40 w-40 items-center justify-center text-muted">
+                <QrCode size={32} />
+              </div>
+            )}
+            <p className="text-xs text-muted">Scan this with "Scan QR Code" to check in to Desk {desk.id}.</p>
+          </div>
+        )}
       </div>
 
       {/* Amenities */}
