@@ -1,5 +1,5 @@
-export const API_BASE = 'http://localhost:4000';
-export const WS_BASE = 'ws://localhost:4000';
+export const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+export const WS_BASE = import.meta.env.VITE_WS_URL || 'ws://localhost:4000';
 
 async function request(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
